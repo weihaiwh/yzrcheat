@@ -306,7 +306,7 @@ static void layoutPanel(UIView *bv) {
     CGFloat pw=280, ph=520;
     CGFloat px=bf.origin.x-pw-8; if(px<4)px=bf.origin.x+bf.size.width+8;
     CGFloat py=bf.origin.y+bf.size.height/2-ph/2;
-    if(py<4)py=4; if(pyy+ph>sc.size.height-4)py=sc.size.height-ph-4;
+    if(py<4)py=4; if(py+ph>sc.size.height-4)py=sc.size.height-ph-4;
     g_panel.frame=CGRectMake(px,py,pw,ph);
 }
 
