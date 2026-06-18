@@ -125,13 +125,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0
+          name: "v1.0 - First Release"
+          target_commitish: ${{ github.sha }}
           files: output/*
+          fail_on_unmatched_files: false
           body: |
             ## 英雄3 (Hero3) Cheat v1.0
-            - ✅ 无CD (CheckCanUseSkill -> return true)
-            - ✅ 伤害秒杀 (get_limitDamage -> 999999, 可调)
-            - ✅ 商店购买 (PurchaseItem直接调用)
-            - ✅ IAP内购模拟 (ApplePayOnSuccess协议分析)
+            - 无CD (CheckCanUseSkill -> return true)
+            - 伤害秒杀 (get_limitDamage -> 999999, 可调)
+            - 商店购买 (PurchaseItem直接调用)
+            - IAP内购模拟 (ApplePayOnSuccess协议分析)
             - Dobby inline hook 框架
             - 可拖动浮动球 + 功能面板
         env:
