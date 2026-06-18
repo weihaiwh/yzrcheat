@@ -1,0 +1,138 @@
+name: Build YZR3 Hero3 Cheat v1.0 (Dobby)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git cmake ninja-build python3 \
+            libssl-dev zlib1g-dev libxml2-dev uuid-dev libbsd-dev \
+            autoconf automake libtool pkg-config clang libc++-dev libc++abi-dev xz-utils
+
+      - name: Get iOS SDK
+        run: |
+          git clone https://github.com/theos/sdks.git --depth 1 /tmp/sdks
+          cd /tmp/sdks
+          tar -cJf /tmp/iPhoneOS15.6.sdk.tar.xz iPhoneOS15.6.sdk
+          ls -lh /tmp/iPhoneOS15.6.sdk.tar.xz
+
+      - name: Build cctools-port toolchain
+        run: |
+          git clone https://github.com/tpoechtrager/cctools-port.git --depth 1 /tmp/cctools
+          cd /tmp/cctools/usage_examples/ios_toolchain
+          ./build.sh /tmp/iPhoneOS15.6.sdk.tar.xz arm64
+
+      - name: Build Dobby static library for iOS ARM64
+        run: |
+          TOOLCHAIN=/tmp/cctools/usage_examples/ios_toolchain/target
+          export PATH="$TOOLCHAIN/bin:$PATH"
+          SDK="$TOOLCHAIN/SDK/iPhoneOS15.6.sdk"
+
+          git clone https://github.com/jmpews/Dobby.git --depth 1 /tmp/dobby
+
+          cat > /tmp/ios-toolchain.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Darwin)
+          set(CMAKE_SYSTEM_PROCESSOR arm64)
+          set(CMAKE_C_COMPILER arm-apple-darwin11-clang)
+          set(CMAKE_CXX_COMPILER arm-apple-darwin11-clang++)
+          set(CMAKE_FIND_ROOT_PATH MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH MODE_INCLUDE ONLY)
+          EOF
+
+          mkdir -p /tmp/dobby/build && cd /tmp/dobby/build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/ios-toolchain.cmake \
+            -DCMAKE_C_FLAGS="-arch arm64 -miphoneos-version-min=15.0 -isysroot $SDK" \
+            -DCMAKE_CXX_FLAGS="-arch arm64 -miphoneos-version-min=15.0 -isysroot $SDK" \
+            -DDOBBY_DEBUG=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+
+          ninja -j$(nproc)
+
+          find /tmp/dobby/build -name "*.a" -ls
+          echo "DOBBY_LIB=$(find /tmp/dobby/build -name 'libdobby.a' | head -1)" >> $GITHUB_ENV
+
+      - name: Build tweak dylib
+        run: |
+          TOOLCHAIN=/tmp/cctools/usage_examples/ios_toolchain/target
+          export PATH="$TOOLCHAIN/bin:$PATH"
+          SDK="$TOOLCHAIN/SDK/iPhoneOS15.6.sdk"
+          DOBBY_LIB="${DOBBY_LIB:-/tmp/dobby/build/libdobby.a}"
+
+          echo "SDK: $SDK"
+          echo "DOBBY_LIB: $DOBBY_LIB"
+          ls -la "$DOBBY_LIB" || { echo "Dobby lib not found!"; exit 1; }
+
+          arm-apple-darwin11-clang \
+            -arch arm64 \
+            -miphoneos-version-min=15.0 \
+            -isysroot "$SDK" \
+            -fobjc-arc \
+            -I. \
+            -c YZR3_HeroCheat.m \
+            -o YZR3_HeroCheat.o
+
+          echo "Compile OK, linking with Dobby..."
+
+          arm-apple-darwin11-ld \
+            -arch arm64 \
+            -iphoneos_version_min 15.0 \
+            -syslibroot "$SDK" \
+            -dynamic \
+            -dylib \
+            -framework Foundation \
+            -framework UIKit \
+            -framework CoreGraphics \
+            -framework CoreFoundation \
+            -lSystem \
+            -lobjc \
+            -lc++ \
+            -objc_abi_version 2 \
+            -install_name @executable_path/YZR3_HeroCheat.dylib \
+            -o YZR3_HeroCheat.dylib \
+            YZR3_HeroCheat.o \
+            "$DOBBY_LIB"
+
+      - name: Sign and package
+        run: |
+          LDID=$(find /tmp/cctools -name "ldid" -type f | head -1)
+          [ -n "$LDID" ] && $LDID -S YZR3_HeroCheat.dylib
+
+          mkdir -p output
+          cp YZR3_HeroCheat.dylib YZR3_HeroCheat.plist output/
+          file output/YZR3_HeroCheat.dylib
+          ls -lh output/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YZR3-HeroCheat-dylib
+          path: output/
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0
+          files: output/*
+          body: |
+            ## 英雄3 (Hero3) Cheat v1.0
+            - ✅ 无CD (CheckCanUseSkill -> return true)
+            - ✅ 伤害秒杀 (get_limitDamage -> 999999, 可调)
+            - ✅ 商店购买 (PurchaseItem直接调用)
+            - ✅ IAP内购模拟 (ApplePayOnSuccess协议分析)
+            - Dobby inline hook 框架
+            - 可拖动浮动球 + 功能面板
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
